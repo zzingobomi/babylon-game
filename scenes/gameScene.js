@@ -31,6 +31,7 @@ function createGround(scene, BABYLON) {
 export default async function gameScene(engine, BABYLON) {
   const {
     ActionManager,
+    Scalar,
     Matrix,
     ExecuteCodeAction,
     SceneLoader,
@@ -42,6 +43,7 @@ export default async function gameScene(engine, BABYLON) {
 
   let isMoving = false;
   let characterSpeed = 4;
+  let ourTargetPos;
 
   const scene = new BABYLON.Scene(engine);
 
@@ -55,6 +57,27 @@ export default async function gameScene(engine, BABYLON) {
     new BABYLON.Vector3(-1, -2, -1),
     scene
   );
+
+  // import Tree
+  const treeMain = await SceneLoader.ImportMeshAsync(
+    "",
+    "./models/",
+    "tree.glb",
+    scene
+  );
+  const tree = treeMain.meshes[1];
+  tree.parent = null;
+  treeMain.meshes[0].dispose();
+
+  let treeLength = 30;
+  let radius = 50 / 2;
+  for (let i = 0; i < treeLength; i++) {
+    const randomX = Scalar.RandomRange(-radius, radius);
+    const randomZ = Scalar.RandomRange(-radius, radius);
+
+    const treeClone = tree.clone("tree");
+    treeClone.position = new Vector3(randomX, 0, randomZ);
+  }
 
   // character creation
   const model = await SceneLoader.ImportMeshAsync(
@@ -128,12 +151,21 @@ export default async function gameScene(engine, BABYLON) {
   scene.onPointerDown = (e) => {
     if (e.buttons === 1) {
       const pickInfo = scene.pick(scene.pointerX, scene.pointerY);
+      if (!pickInfo.hit) return;
+
       if (pickInfo.pickedMesh.name === "ground") {
-        targetBox.position = pickInfo.pickedPoint;
-        move(pickInfo.pickedPoint);
+        pickInfo.pickedPoint.y = characterBox.position.y;
+        ourTargetPos = pickInfo.pickedPoint;
+        const distance = calculateDistance(ourTargetPos, characterBox.position);
+        if (distance < 1) return console.log("we are near on our target");
+        move(ourTargetPos);
       }
     }
   };
+
+  function calculateDistance(targetPos, ourPos) {
+    return Vector3.Distance(targetPos, ourPos);
+  }
 
   function move(directionPos) {
     isMoving = true;
@@ -143,24 +175,31 @@ export default async function gameScene(engine, BABYLON) {
   }
 
   function stop() {
-    targetBox.position.y = 100;
     isMoving = false;
     anims.forEach((anim) => anim.name === "running" && anim.stop());
+    ourTargetPos = undefined;
   }
 
   scene.registerAfterRender(() => {
+    const deltaTime = engine.getDeltaTime() / 1000;
+
     cameraContainer.locallyTranslate(
       new Vector3(
-        camHorizontal * camSpd * (engine.getDeltaTime() / 1000),
+        camHorizontal * camSpd * deltaTime,
         0,
-        camVertical * camSpd * (engine.getDeltaTime() / 1000)
+        camVertical * camSpd * deltaTime
       )
     );
 
-    if (isMoving)
+    if (isMoving && ourTargetPos) {
+      const distance = calculateDistance(ourTargetPos, characterBox.position);
+
+      if (distance < 1) return stop();
+
       characterBox.locallyTranslate(
-        new Vector3(0, 0, characterSpeed * (engine.getDeltaTime() / 1000))
+        new Vector3(0, 0, characterSpeed * deltaTime)
       );
+    }
   });
 
   window.addEventListener("resize", () => {
